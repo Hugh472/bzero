@@ -27,21 +27,25 @@ type DialAction struct {
 	outputChan      chan plugin.ActionWrapper
 	streamInputChan chan smsg.StreamMessage
 
+	// done channel for letting the plugin know we're done
+	doneChan chan struct{}
+
 	closed bool
 }
 
 func New(logger *logger.Logger,
-	requestId string) (*DialAction, chan plugin.ActionWrapper) {
+	requestId string) *DialAction {
 
-	stream := &DialAction{
+	dial := &DialAction{
 		logger:    logger,
 		requestId: requestId,
 
 		outputChan:      make(chan plugin.ActionWrapper, 10),
 		streamInputChan: make(chan smsg.StreamMessage, 30),
+		doneChan:        make(chan struct{}),
 	}
 
-	return stream, stream.outputChan
+	return dial
 }
 
 func (d *DialAction) Start(tmb *tomb.Tomb, lconn *net.TCPConn) error {
@@ -101,7 +105,7 @@ func (d *DialAction) Start(tmb *tomb.Tomb, lconn *net.TCPConn) error {
 	}()
 
 	go func() {
-		defer close(d.outputChan)
+		defer close(d.doneChan)
 
 		// listen to messages coming from the local tcp connection and sends them to the agent
 		buf := make([]byte, chunkSize)
@@ -143,6 +147,10 @@ func (d *DialAction) Start(tmb *tomb.Tomb, lconn *net.TCPConn) error {
 	}()
 
 	return nil
+}
+
+func (d *DialAction) Done() <-chan struct{} {
+	return d.doneChan
 }
 
 func (d *DialAction) sendOutputMessage(action dial.DialSubAction, payload interface{}) {
