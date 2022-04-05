@@ -46,7 +46,6 @@ type IKeysplitting interface {
 	BuildSyn(action string, payload []byte) (ksmsg.KeysplittingMessage, error)
 	Validate(ksMessage *ksmsg.KeysplittingMessage) error
 	Recover(errorMessage rrr.ErrorMessage) error
-	// BuildResponse(ksMessage *ksmsg.KeysplittingMessage, action string, actionPayload []byte) (ksmsg.KeysplittingMessage, error)
 	Inbox(action string, actionPayload []byte) error
 	Outbox() <-chan *ksmsg.KeysplittingMessage
 }
@@ -57,7 +56,7 @@ type IPlugin interface {
 	Feed(food interface{}) error
 	Outbox() <-chan plugin.ActionWrapper
 	Done() <-chan struct{}
-	// Stop()
+	Stop()
 }
 
 type DataChannel struct {
@@ -156,7 +155,7 @@ func New(logger *logger.Logger,
 				return errors.New("daemon was orphaned too young and can't be batman :'(")
 			case <-dc.tmb.Dying():
 				dc.logger.Infof("Killing datachannel and its subsidiaries because %s", dc.tmb.Err())
-				time.Sleep(10 * time.Second) // give datachannel time to close correctly
+				dc.plugin.Stop()
 				return nil
 			case <-dc.plugin.Done():
 				dc.Close(fmt.Errorf("datachannel's sole action is closed"))
