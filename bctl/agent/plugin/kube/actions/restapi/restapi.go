@@ -6,9 +6,9 @@ import (
 	"io/ioutil"
 	"net/http"
 
-	kubeutils "bastionzero.com/bctl/v1/bctl/agent/plugin/kube/utils"
 	"bastionzero.com/bctl/v1/bzerolib/logger"
 	kuberest "bastionzero.com/bctl/v1/bzerolib/plugin/kube/actions/restapi"
+	kubeutils "bastionzero.com/bctl/v1/bzerolib/plugin/kube/utils"
 )
 
 type RestApiAction struct {

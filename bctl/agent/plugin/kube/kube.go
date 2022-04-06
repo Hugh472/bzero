@@ -109,7 +109,7 @@ func parseAction(action string) (bzkube.KubeAction, error) {
 }
 
 func (k *KubePlugin) Receive(action string, actionPayload []byte) (string, []byte, error) {
-	k.logger.Debugf("DB plugin received message with %s action", action)
+	k.logger.Debugf("Kube plugin received message with %s action", action)
 
 	if safePayload, err := cleanPayload(actionPayload); err != nil {
 		k.logger.Error(err)

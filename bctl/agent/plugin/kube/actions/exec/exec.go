@@ -9,10 +9,10 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/remotecommand"
 
-	kubedaemonutils "bastionzero.com/bctl/v1/bctl/daemon/plugin/kube/utils"
 	"bastionzero.com/bctl/v1/bzerolib/logger"
 	kubeaction "bastionzero.com/bctl/v1/bzerolib/plugin/kube"
 	execaction "bastionzero.com/bctl/v1/bzerolib/plugin/kube/actions/exec"
+	kubeutils "bastionzero.com/bctl/v1/bzerolib/plugin/kube/utils"
 	smsg "bastionzero.com/bctl/v1/bzerolib/stream/message"
 )
 
@@ -86,8 +86,8 @@ func (e *ExecAction) Receive(action string, actionPayload []byte) (string, []byt
 		}
 
 		// Always feed in the exec stdin a chunk at a time (i.e. break up the byte array into chunks)
-		for i := 0; i < len(execInputAction.Stdin); i += kubedaemonutils.ExecChunkSize {
-			end := i + kubedaemonutils.ExecChunkSize
+		for i := 0; i < len(execInputAction.Stdin); i += kubeutils.ExecChunkSize {
+			end := i + kubeutils.ExecChunkSize
 			if end > len(execInputAction.Stdin) {
 				end = len(execInputAction.Stdin)
 			}

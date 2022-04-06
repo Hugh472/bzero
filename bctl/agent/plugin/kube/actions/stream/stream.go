@@ -12,10 +12,10 @@ import (
 	"net/url"
 	"strings"
 
-	kubeutils "bastionzero.com/bctl/v1/bctl/agent/plugin/kube/utils"
 	"bastionzero.com/bctl/v1/bzerolib/logger"
 	kubeaction "bastionzero.com/bctl/v1/bzerolib/plugin/kube"
 	"bastionzero.com/bctl/v1/bzerolib/plugin/kube/actions/stream"
+	kubeutils "bastionzero.com/bctl/v1/bzerolib/plugin/kube/utils"
 	smsg "bastionzero.com/bctl/v1/bzerolib/stream/message"
 	"gopkg.in/tomb.v2"
 )

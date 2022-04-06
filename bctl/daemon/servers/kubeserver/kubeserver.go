@@ -12,11 +12,11 @@ import (
 
 	"bastionzero.com/bctl/v1/bctl/daemon/datachannel"
 	"bastionzero.com/bctl/v1/bctl/daemon/plugin/kube"
-	kubeutils "bastionzero.com/bctl/v1/bctl/daemon/plugin/kube/utils"
 	am "bastionzero.com/bctl/v1/bzerolib/channels/agentmessage"
 	"bastionzero.com/bctl/v1/bzerolib/channels/websocket"
 	"bastionzero.com/bctl/v1/bzerolib/logger"
 	bzkube "bastionzero.com/bctl/v1/bzerolib/plugin/kube"
+	kubeutils "bastionzero.com/bctl/v1/bzerolib/plugin/kube/utils"
 )
 
 const (

@@ -15,10 +15,10 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/transport/spdy"
 
-	kubeutilsdaemon "bastionzero.com/bctl/v1/bctl/daemon/plugin/kube/utils"
 	"bastionzero.com/bctl/v1/bzerolib/logger"
 	kubeaction "bastionzero.com/bctl/v1/bzerolib/plugin/kube"
 	"bastionzero.com/bctl/v1/bzerolib/plugin/kube/actions/portforward"
+	kubeutils "bastionzero.com/bctl/v1/bzerolib/plugin/kube/utils"
 	smsg "bastionzero.com/bctl/v1/bzerolib/stream/message"
 )
 
@@ -215,7 +215,7 @@ func (a *PortForwardAction) startPortForward(startPortForwardRequest portforward
 
 	hostIP := strings.TrimLeft(config.Host, "htps:/")
 	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, http.MethodPost, &url.URL{Scheme: "https", Path: a.Endpoint, Host: hostIP})
-	streamCh, protocolSelected, err := dialer.Dial(kubeutilsdaemon.PortForwardProtocolV1Name)
+	streamCh, protocolSelected, err := dialer.Dial(kubeutils.PortForwardProtocolV1Name)
 	if err != nil {
 		rerr := fmt.Errorf("error dialing portforward spdy stream: %s", err)
 		a.logger.Error(rerr)
@@ -268,8 +268,8 @@ func (r *PortForwardRequest) openPortForwardStream(portforwardRequestId string, 
 	r.logger.Infof("Starting port forward connection for: %s on port: %d. PortforwardRequestId: %ss", endpoint, podPort, portforwardRequestId)
 
 	// Update our error headers to include the podPort
-	errorHeaders[kubeutilsdaemon.PortHeader] = fmt.Sprintf("%d", podPort)
-	errorHeaders[kubeutilsdaemon.PortForwardRequestIDHeader] = portforwardRequestId
+	errorHeaders[kubeutils.PortHeader] = fmt.Sprintf("%d", podPort)
+	errorHeaders[kubeutils.PortForwardRequestIDHeader] = portforwardRequestId
 
 	// Create our two streams with the provided headers
 	// We purposely share the header object for data and error stream
