@@ -25,15 +25,6 @@ type IKubeAction interface {
 	Closed() bool
 }
 
-type KubeAction string
-
-const (
-	Exec        KubeAction = "exec"
-	RestApi     KubeAction = "restapi"
-	Stream      KubeAction = "stream"
-	PortForward KubeAction = "portforward"
-)
-
 type KubePlugin struct {
 	tmb *tomb.Tomb // datachannel's tomb
 
