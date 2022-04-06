@@ -81,12 +81,6 @@ func (s *StreamAction) Receive(action string, actionPayload []byte) (string, []b
 			return action, []byte{}, rerr
 		}
 
-		// check requestid matches
-		if err := kubeutils.MatchRequestId(streamActionRequest.RequestId, s.requestId); err != nil {
-			s.logger.Error(err)
-			return "", []byte{}, err
-		}
-
 		s.logger.Info("Stopping Stream Action")
 		s.doneChan <- true // close the go routines
 		s.closed = true
