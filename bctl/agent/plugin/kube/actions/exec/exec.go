@@ -14,8 +14,6 @@ import (
 	kubeaction "bastionzero.com/bctl/v1/bzerolib/plugin/kube"
 	execaction "bastionzero.com/bctl/v1/bzerolib/plugin/kube/actions/exec"
 	smsg "bastionzero.com/bctl/v1/bzerolib/stream/message"
-	stdin "bastionzero.com/bctl/v1/bzerolib/stream/stdreader"
-	stdout "bastionzero.com/bctl/v1/bzerolib/stream/stdwriter"
 )
 
 type ExecAction struct {
@@ -169,9 +167,9 @@ func (e *ExecAction) StartExec(startExecRequest execaction.KubeExecStartActionPa
 		return string(execaction.ExecStart), []byte{}, fmt.Errorf("error creating Spdy executor: %s", err)
 	}
 
-	stderrWriter := stdout.NewStdWriter(e.streamOutputChan, e.streamMessageVersion, e.requestId, string(kubeaction.Exec), smsg.StdErr, e.logId)
-	stdoutWriter := stdout.NewStdWriter(e.streamOutputChan, e.streamMessageVersion, e.requestId, string(kubeaction.Exec), smsg.StdOut, e.logId)
-	stdinReader := stdin.NewStdReader(string(execaction.StdIn), startExecRequest.RequestId, e.execStdinChannel)
+	stderrWriter := NewStdWriter(e.streamOutputChan, e.streamMessageVersion, e.requestId, string(kubeaction.Exec), smsg.StdErr, e.logId)
+	stdoutWriter := NewStdWriter(e.streamOutputChan, e.streamMessageVersion, e.requestId, string(kubeaction.Exec), smsg.StdOut, e.logId)
+	stdinReader := NewStdReader(string(execaction.StdIn), startExecRequest.RequestId, e.execStdinChannel)
 	terminalSizeQueue := NewTerminalSizeQueue(startExecRequest.RequestId, e.execResizeChannel)
 
 	// This function listens for a closed datachannel.  If the datachannel is closed, it doesn't necessarily mean
