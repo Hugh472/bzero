@@ -8,14 +8,6 @@ import (
 	"strings"
 )
 
-func MatchRequestId(requestIdPassed string, requestIdSaved string) error {
-	if requestIdPassed != requestIdSaved {
-		rerr := fmt.Errorf("invalid request ID passed: %s", requestIdPassed)
-		return rerr
-	}
-	return nil
-}
-
 func BuildHttpRequest(kubeHost string, endpoint string, body string, method string, headers map[string][]string, serviceAccountToken string, targetUser string, targetGroups []string) (*http.Request, error) {
 	// Perform the api request
 	kubeApiUrl := kubeHost + endpoint

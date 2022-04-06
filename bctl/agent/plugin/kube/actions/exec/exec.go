@@ -87,10 +87,6 @@ func (e *ExecAction) Receive(action string, actionPayload []byte) (string, []byt
 			return "", []byte{}, rerr
 		}
 
-		if err := e.validateRequestId(execInputAction.RequestId); err != nil {
-			return "", []byte{}, err
-		}
-
 		// Always feed in the exec stdin a chunk at a time (i.e. break up the byte array into chunks)
 		for i := 0; i < len(execInputAction.Stdin); i += kubedaemonutils.ExecChunkSize {
 			end := i + kubedaemonutils.ExecChunkSize
@@ -109,10 +105,6 @@ func (e *ExecAction) Receive(action string, actionPayload []byte) (string, []byt
 			return "", []byte{}, rerr
 		}
 
-		if err := e.validateRequestId(execResizeAction.RequestId); err != nil {
-			return "", []byte{}, err
-		}
-
 		e.execResizeChannel <- execResizeAction
 		return string(execaction.ExecResize), []byte{}, nil
 	case execaction.ExecStop:
@@ -123,10 +115,6 @@ func (e *ExecAction) Receive(action string, actionPayload []byte) (string, []byt
 			return "", []byte{}, rerr
 		}
 
-		if err := e.validateRequestId(execStopAction.RequestId); err != nil {
-			return "", []byte{}, err
-		}
-
 		e.closed = true
 		return string(execaction.ExecStop), []byte{}, nil
 	default:
@@ -134,15 +122,6 @@ func (e *ExecAction) Receive(action string, actionPayload []byte) (string, []byt
 		e.logger.Error(rerr)
 		return "", []byte{}, rerr
 	}
-}
-
-func (e *ExecAction) validateRequestId(requestId string) error {
-	if requestId != e.requestId {
-		rerr := fmt.Errorf("invalid request ID passed")
-		e.logger.Error(rerr)
-		return rerr
-	}
-	return nil
 }
 
 func (e *ExecAction) StartExec(startExecRequest execaction.KubeExecStartActionPayload) (string, []byte, error) {

@@ -9,14 +9,12 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 
 	"gopkg.in/tomb.v2"
 	"k8s.io/apimachinery/pkg/util/httpstream"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/transport/spdy"
 
-	kubeutils "bastionzero.com/bctl/v1/bctl/agent/plugin/kube/utils"
 	kubeutilsdaemon "bastionzero.com/bctl/v1/bctl/daemon/plugin/kube/utils"
 	"bastionzero.com/bctl/v1/bzerolib/logger"
 	kubeaction "bastionzero.com/bctl/v1/bzerolib/plugin/kube"
@@ -43,9 +41,7 @@ type PortForwardAction struct {
 	// Done channel
 	doneChan chan bool
 
-	// Map of portforardId <-> PortForwardSubAction
-	requestMap     map[string]*PortForwardRequest
-	requestMapLock sync.Mutex
+	request *PortForwardRequest
 
 	// So we can recreate the port forward
 	Endpoint        string
@@ -72,8 +68,8 @@ func New(logger *logger.Logger,
 		targetUser:          targetUser,
 		closed:              false,
 		streamOutputChan:    ch,
-		requestMap:          make(map[string]*PortForwardRequest),
-		doneChan:            make(chan bool),
+		// FIXME: do we need to initialize our request?
+		doneChan: make(chan bool),
 	}, nil
 }
 
@@ -93,8 +89,8 @@ func (a *PortForwardAction) Receive(action string, actionPayload []byte) (string
 			a.logger.Error(rerr)
 			return "", []byte{}, rerr
 		}
-
 		return a.startPortForward(startPortForwardRequest)
+
 	case portforward.DataInPortForward, portforward.ErrorInPortForward:
 		var dataInputAction portforward.KubePortForwardActionPayload
 		if err := json.Unmarshal(actionPayload, &dataInputAction); err != nil {
@@ -103,19 +99,13 @@ func (a *PortForwardAction) Receive(action string, actionPayload []byte) (string
 			return "", []byte{}, rerr
 		}
 
-		if err := kubeutils.MatchRequestId(dataInputAction.RequestId, a.requestId); err != nil {
-			a.logger.Error(err)
-			return "", []byte{}, err
-		}
-
 		// See if we already have a session for this portforwardRequestId, else create it
-		if oldRequest, ok := a.getRequestMap(dataInputAction.PortForwardRequestId); ok {
-			oldRequest.portforwardDataInChannel <- dataInputAction.Data
-		} else {
+		if a.request == nil {
 			// Create a new action and update our map
+			// FIXME: still need these two lines?
 			subLogger := a.logger.GetActionLogger("kube/portforward/agent/request")
 			subLogger.AddRequestId(a.requestId)
-			newRequest := &PortForwardRequest{
+			a.request = &PortForwardRequest{
 				logger:                    subLogger,
 				streamOutputChan:          a.streamOutputChan,
 				streamMessageVersion:      a.streamMessageVersion,
@@ -124,16 +114,15 @@ func (a *PortForwardAction) Receive(action string, actionPayload []byte) (string
 				tmb:                       a.tmb,
 				doneChan:                  make(chan bool),
 			}
-			if err := newRequest.openPortForwardStream(dataInputAction.PortForwardRequestId, a.DataHeaders, a.ErrorHeaders, a.targetUser, a.logId, a.requestId, a.Endpoint, dataInputAction.PodPort, a.targetGroups, a.streamCh); err != nil {
+			if err := a.request.openPortForwardStream(dataInputAction.PortForwardRequestId, a.DataHeaders, a.ErrorHeaders, a.targetUser, a.logId, a.requestId, a.Endpoint, dataInputAction.PodPort, a.targetGroups, a.streamCh); err != nil {
 				rerr := fmt.Errorf("error opening stream for new portforward request: %s", err)
 				a.logger.Error(rerr)
 				return "", []byte{}, rerr
 			}
-			a.updateRequestMap(newRequest, dataInputAction.PortForwardRequestId)
-			newRequest.portforwardDataInChannel <- dataInputAction.Data
 		}
-
+		a.request.portforwardDataInChannel <- dataInputAction.Data
 		return string(action), []byte{}, nil
+
 	case portforward.StopPortForwardRequest:
 		var stopRequestAction portforward.KubePortForwardStopRequestActionPayload
 		if err := json.Unmarshal(actionPayload, &stopRequestAction); err != nil {
@@ -142,21 +131,14 @@ func (a *PortForwardAction) Receive(action string, actionPayload []byte) (string
 			return "", []byte{}, rerr
 		}
 
-		// If we haven't recvied a start message, just leave
-		if err := kubeutils.MatchRequestId(stopRequestAction.RequestId, a.requestId); err != nil {
-			a.logger.Error(err)
-			return string(portforward.StopPortForwardRequest), []byte{}, nil
-		}
-
 		// Alert on the done channel
-		if portForwardRequest, ok := a.getRequestMap(stopRequestAction.PortForwardRequestId); ok {
-			portForwardRequest.doneChan <- true
-		}
+		a.request.doneChan <- true
 
 		// Else update our requestMap
-		a.deleteRequestMap(stopRequestAction.PortForwardRequestId)
-
+		// FIXME: should I be doing this?
+		a.request = nil
 		return string(portforward.StopPortForwardRequest), []byte{}, nil
+
 	case portforward.StopPortForward:
 		// We decrypt the message, incase no start message was sent over the port forward session
 		var stopAction portforward.KubePortForwardStopActionPayload
@@ -166,11 +148,6 @@ func (a *PortForwardAction) Receive(action string, actionPayload []byte) (string
 			return "", []byte{}, rerr
 		}
 		a.logger.Infof("Stopping port forward action for requestId: %s", a.requestId)
-
-		if err := kubeutils.MatchRequestId(stopAction.RequestId, a.requestId); err != nil {
-			a.logger.Error(err)
-			return string(portforward.StopPortForward), []byte{}, nil
-		}
 
 		// Alert on our done channel
 		a.doneChan <- true
@@ -182,8 +159,8 @@ func (a *PortForwardAction) Receive(action string, actionPayload []byte) (string
 
 		// Set ourselves to closed so this object will get dereferenced
 		a.closed = true
-
 		return string(portforward.StopPortForward), []byte{}, nil
+
 	default:
 		rerr := fmt.Errorf("unhandled portforward action: %v", action)
 		a.logger.Error(rerr)
@@ -269,26 +246,6 @@ func (a *PortForwardAction) sendReadyMessage(errorMessage string) {
 		Content:        errorMessage,
 	}
 	a.streamOutputChan <- message
-}
-
-// Helper function so we avoid writing to this map at the same time
-func (a *PortForwardAction) updateRequestMap(newPortForwardRequest *PortForwardRequest, key string) {
-	a.requestMapLock.Lock()
-	a.requestMap[key] = newPortForwardRequest
-	a.requestMapLock.Unlock()
-}
-
-func (a *PortForwardAction) deleteRequestMap(key string) {
-	a.requestMapLock.Lock()
-	delete(a.requestMap, key)
-	a.requestMapLock.Unlock()
-}
-
-func (a *PortForwardAction) getRequestMap(key string) (*PortForwardRequest, bool) {
-	a.requestMapLock.Lock()
-	defer a.requestMapLock.Unlock()
-	act, ok := a.requestMap[key]
-	return act, ok
 }
 
 type PortForwardRequest struct {
