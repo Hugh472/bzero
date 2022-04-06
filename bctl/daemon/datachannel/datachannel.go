@@ -102,7 +102,8 @@ func New(logger *logger.Logger,
 	agentPubKey string,
 ) (*DataChannel, *tomb.Tomb, error) {
 
-	keysplitter, err := keysplitting.New(agentPubKey, configPath, refreshTokenCommand)
+	ksLogger := logger.GetComponentLogger("mrzap")
+	keysplitter, err := keysplitting.New(ksLogger, agentPubKey, configPath, refreshTokenCommand)
 	if err != nil {
 		logger.Error(err)
 		return nil, &tomb.Tomb{}, err
@@ -189,10 +190,10 @@ func (d *DataChannel) outgoingKeysplittingSender() error {
 		case <-d.tmb.Dying():
 			return nil
 		case ksMessage := <-d.keysplitting.Outbox():
+			d.logger.Infof("WE'RE SENDING SOME OUTPUT")
 			if ksMessage.Type == ksmsg.Syn {
 				d.sendks = true
 			}
-
 			if d.sendks {
 				d.send(am.Keysplitting, ksMessage)
 			}
@@ -206,6 +207,7 @@ func (d *DataChannel) outgoingPluginMessageProcessor() error {
 		case <-d.tmb.Dying():
 			return nil
 		case wrapper := <-d.plugin.Outbox():
+			d.logger.Infof("PLUGIN OUTPUT HEADED FOR KEYSPLITTING")
 			// Build and send response
 			if err := d.keysplitting.Inbox(wrapper.Action, wrapper.ActionPayload); err != nil {
 				d.logger.Errorf("could not build response message: %s", err)

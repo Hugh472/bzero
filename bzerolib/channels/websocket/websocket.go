@@ -315,6 +315,7 @@ func (w *Websocket) processOutput(agentMessage am.AgentMessage) {
 	if msgBytes, err := json.Marshal(signalRMessage); err != nil {
 		w.logger.Error(fmt.Errorf("error marshalling outgoing SignalR Message: %v", signalRMessage))
 	} else {
+		w.logger.Infof("SENDING MESSAGE")
 		if err := w.client.WriteMessage(websocket.TextMessage, append(msgBytes, signalRMessageTerminatorByte)); err != nil {
 			w.logger.Error(err)
 		}
