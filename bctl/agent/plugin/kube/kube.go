@@ -12,7 +12,6 @@ import (
 	"bastionzero.com/bctl/v1/bctl/agent/plugin/kube/actions/restapi"
 	"bastionzero.com/bctl/v1/bctl/agent/plugin/kube/actions/stream"
 	"bastionzero.com/bctl/v1/bzerolib/logger"
-	"bastionzero.com/bctl/v1/bzerolib/plugin/kube"
 	bzkube "bastionzero.com/bctl/v1/bzerolib/plugin/kube"
 	smsg "bastionzero.com/bctl/v1/bzerolib/stream/message"
 	"gopkg.in/tomb.v2"
@@ -80,13 +79,13 @@ func New(parentTmb *tomb.Tomb,
 		var rerr error
 
 		switch parsedAction {
-		case kube.Exec:
+		case bzkube.Exec:
 			plugin.action, rerr = exec.New(subLogger, parentTmb, serviceAccountToken, kubeHost, synPayload.TargetGroups, synPayload.TargetUser, ch)
-		case kube.PortForward:
+		case bzkube.PortForward:
 			plugin.action, rerr = portforward.New(subLogger, parentTmb, serviceAccountToken, kubeHost, synPayload.TargetGroups, synPayload.TargetUser, ch)
-		case kube.RestApi:
+		case bzkube.RestApi:
 			plugin.action, rerr = restapi.New(subLogger, serviceAccountToken, kubeHost, synPayload.TargetGroups, synPayload.TargetUser)
-		case kube.Stream:
+		case bzkube.Stream:
 			plugin.action, rerr = stream.New(subLogger, parentTmb, serviceAccountToken, kubeHost, synPayload.TargetGroups, synPayload.TargetUser, ch)
 		default:
 			rerr = fmt.Errorf("unhandled Kube action")
@@ -101,12 +100,12 @@ func New(parentTmb *tomb.Tomb,
 	}
 }
 
-func parseAction(action string) (kube.KubeAction, error) {
+func parseAction(action string) (bzkube.KubeAction, error) {
 	parsedAction := strings.Split(action, "/")
 	if len(parsedAction) < 2 {
 		return "", fmt.Errorf("malformed action: %s", action)
 	}
-	return kube.KubeAction(parsedAction[1]), nil
+	return bzkube.KubeAction(parsedAction[1]), nil
 }
 
 func (k *KubePlugin) Receive(action string, actionPayload []byte) (string, []byte, error) {
