@@ -25,7 +25,7 @@ import (
 	spdystream "k8s.io/apimachinery/pkg/util/httpstream/spdy"
 )
 
-type RequestMapStruct struct {
+type PortForwardRequest struct {
 	streamMessageContent portforward.KubePortForwardStreamMessageContent
 	streamMessage        smsg.StreamMessage
 }
@@ -44,9 +44,7 @@ type PortForwardAction struct {
 	streamCreationTimeout time.Duration
 	endpoint              string
 
-	// Map of portforardId <-> PortForwardSubAction
-	requestMap     map[string]chan RequestMapStruct
-	requestMapLock sync.Mutex
+	streamChan chan PortForwardRequest
 }
 
 // httpStreamPair represents the error and data streams for a port
@@ -74,7 +72,6 @@ func New(logger *logger.Logger,
 		ksInputChan:           make(chan plugin.ActionWrapper, 10),
 		streamPairs:           make(map[string]*httpStreamPair),
 		streamCreationTimeout: kubeutils.DefaultStreamCreationTimeout,
-		requestMap:            make(map[string]chan RequestMapStruct),
 	}
 
 	return portForward, portForward.outputChan
@@ -114,13 +111,7 @@ func (p *PortForwardAction) ReceiveStream(stream smsg.StreamMessage) {
 		return
 	}
 
-	// First get the stream
-	streamChan, ok := p.getRequestMap(kubePortforwardStreamMessageContent.PortForwardRequestId)
-	if !ok {
-		p.logger.Error(fmt.Errorf("unable to find stream chan for request: %s", kubePortforwardStreamMessageContent.PortForwardRequestId))
-		return
-	}
-	streamChan <- RequestMapStruct{
+	p.streamChan <- PortForwardRequest{
 		streamMessageContent: kubePortforwardStreamMessageContent,
 		streamMessage:        stream,
 	}
@@ -308,9 +299,6 @@ func (p *PortForwardAction) forwardStreamPair(portforwardSession *httpStreamPair
 	// Make a done channel
 	doneChan := make(chan bool)
 
-	// Make and update the stream channel for this requestId
-	p.updateRequestMap(make(chan RequestMapStruct), portforwardSession.requestID)
-
 	// Set up the go routine to push error data to Bastion
 	go func() {
 		defer portforwardSession.errorStream.Close()
@@ -405,39 +393,29 @@ func (p *PortForwardAction) forwardStreamPair(portforwardSession *httpStreamPair
 		expectedErrorSeqNumber += 1
 	}
 
-	// Get our chan
-	requestMapChannel, ok := p.getRequestMap(portforwardSession.requestID)
-	if !ok {
-		p.logger.Error(fmt.Errorf("error getting stream for request: %s", portforwardSession.requestID))
-		return errors.New("unable to find stream channel")
-	}
-
 	// Set up the function to listen to bastion messages and push to the user
 	for {
 
 		select {
 		case <-doneChan:
-			// Delete the stream pair from our mapping
-			p.deleteRequestMap(portforwardSession.requestID)
-
 			// Return
 			return nil
-		case requestMapStruct := <-requestMapChannel:
+		case portForwardRequest := <-p.streamChan:
 			// contentBytes, _ := base64.StdEncoding.DecodeString(streamMessage.Content)
 
-			switch requestMapStruct.streamMessage.SchemaVersion {
+			switch portForwardRequest.streamMessage.SchemaVersion {
 			// as of 202204
 			// note there is some blatant repetition here but this code isn't a good candidate for being
 			// split out into a separate function because it uses the local processXMessage functions
 			case smsg.CurrentSchema:
 				// look at Type and TypeV2 -- that way, when the agent removes TypeV2, we won't break
-				if requestMapStruct.streamMessage.Type == smsg.Data || requestMapStruct.streamMessage.TypeV2 == smsg.Data {
+				if portForwardRequest.streamMessage.Type == smsg.Data || portForwardRequest.streamMessage.TypeV2 == smsg.Data {
 					// Check our seqNumber
-					if requestMapStruct.streamMessage.SequenceNumber == expectedDataSeqNumber {
-						processDataMessage(requestMapStruct.streamMessageContent.Content)
+					if portForwardRequest.streamMessage.SequenceNumber == expectedDataSeqNumber {
+						processDataMessage(portForwardRequest.streamMessageContent.Content)
 					} else {
 						// Update our buffer
-						dataBuffer[requestMapStruct.streamMessage.SequenceNumber] = requestMapStruct.streamMessageContent.Content
+						dataBuffer[portForwardRequest.streamMessage.SequenceNumber] = portForwardRequest.streamMessageContent.Content
 					}
 
 					// Always attempt to processes out of order messages
@@ -447,12 +425,12 @@ func (p *PortForwardAction) forwardStreamPair(portforwardSession *httpStreamPair
 						processDataMessage(outOfOrderDataContent)
 						outOfOrderDataContent, ok = dataBuffer[expectedDataSeqNumber]
 					}
-				} else if requestMapStruct.streamMessage.Type == smsg.Error || requestMapStruct.streamMessage.TypeV2 == smsg.Error {
-					if requestMapStruct.streamMessage.SequenceNumber == expectedErrorSeqNumber {
-						processErrorMessage(requestMapStruct.streamMessageContent.Content)
+				} else if portForwardRequest.streamMessage.Type == smsg.Error || portForwardRequest.streamMessage.TypeV2 == smsg.Error {
+					if portForwardRequest.streamMessage.SequenceNumber == expectedErrorSeqNumber {
+						processErrorMessage(portForwardRequest.streamMessageContent.Content)
 					} else {
 						// Update our buffer
-						errorBuffer[requestMapStruct.streamMessage.SequenceNumber] = requestMapStruct.streamMessageContent.Content
+						errorBuffer[portForwardRequest.streamMessage.SequenceNumber] = portForwardRequest.streamMessageContent.Content
 					}
 
 					// Always attempt to process out of order messages
@@ -463,18 +441,18 @@ func (p *PortForwardAction) forwardStreamPair(portforwardSession *httpStreamPair
 						outOfOrderErrorContent, ok = errorBuffer[expectedErrorSeqNumber]
 					}
 				} else {
-					p.logger.Errorf("unhandled stream type: %s and typeV2: %s", requestMapStruct.streamMessage.Type, requestMapStruct.streamMessage.TypeV2)
+					p.logger.Errorf("unhandled stream type: %s and typeV2: %s", portForwardRequest.streamMessage.Type, portForwardRequest.streamMessage.TypeV2)
 				}
 			// prior to 202204
 			case "":
-				switch requestMapStruct.streamMessage.Type {
+				switch portForwardRequest.streamMessage.Type {
 				case smsg.DataPortForward:
 					// Check our seqNumber
-					if requestMapStruct.streamMessage.SequenceNumber == expectedDataSeqNumber {
-						processDataMessage(requestMapStruct.streamMessageContent.Content)
+					if portForwardRequest.streamMessage.SequenceNumber == expectedDataSeqNumber {
+						processDataMessage(portForwardRequest.streamMessageContent.Content)
 					} else {
 						// Update our buffer
-						dataBuffer[requestMapStruct.streamMessage.SequenceNumber] = requestMapStruct.streamMessageContent.Content
+						dataBuffer[portForwardRequest.streamMessage.SequenceNumber] = portForwardRequest.streamMessageContent.Content
 					}
 					// Always attempt to processes out of order messages
 					outOfOrderDataContent, ok := dataBuffer[expectedDataSeqNumber]
@@ -484,11 +462,11 @@ func (p *PortForwardAction) forwardStreamPair(portforwardSession *httpStreamPair
 						outOfOrderDataContent, ok = dataBuffer[expectedDataSeqNumber]
 					}
 				case smsg.ErrorPortForward:
-					if requestMapStruct.streamMessage.SequenceNumber == expectedErrorSeqNumber {
-						processErrorMessage(requestMapStruct.streamMessageContent.Content)
+					if portForwardRequest.streamMessage.SequenceNumber == expectedErrorSeqNumber {
+						processErrorMessage(portForwardRequest.streamMessageContent.Content)
 					} else {
 						// Update our buffer
-						errorBuffer[requestMapStruct.streamMessage.SequenceNumber] = requestMapStruct.streamMessageContent.Content
+						errorBuffer[portForwardRequest.streamMessage.SequenceNumber] = portForwardRequest.streamMessageContent.Content
 					}
 					// Always attempt to process out of order messages
 					outOfOrderErrorContent, ok := errorBuffer[expectedErrorSeqNumber]
@@ -498,10 +476,10 @@ func (p *PortForwardAction) forwardStreamPair(portforwardSession *httpStreamPair
 						outOfOrderErrorContent, ok = errorBuffer[expectedErrorSeqNumber]
 					}
 				default:
-					p.logger.Errorf("unhandled stream type: %s", requestMapStruct.streamMessage.Type)
+					p.logger.Errorf("unhandled stream type: %s", portForwardRequest.streamMessage.Type)
 				}
 			default:
-				p.logger.Errorf("unhandled schema version: %s", requestMapStruct.streamMessage.SchemaVersion)
+				p.logger.Errorf("unhandled schema version: %s", portForwardRequest.streamMessage.SchemaVersion)
 			}
 		}
 	}
@@ -514,26 +492,6 @@ func (p *PortForwardAction) requestID(stream httpstream.Stream) (string, error) 
 		return "", errors.New("port forwarding is not supported")
 	}
 	return requestID, nil
-}
-
-// Helper function so we avoid writing to this map at the same time
-func (p *PortForwardAction) updateRequestMap(newStreamChan chan RequestMapStruct, key string) {
-	p.requestMapLock.Lock()
-	p.requestMap[key] = newStreamChan
-	p.requestMapLock.Unlock()
-}
-
-func (p *PortForwardAction) deleteRequestMap(key string) {
-	p.requestMapLock.Lock()
-	delete(p.requestMap, key)
-	p.requestMapLock.Unlock()
-}
-
-func (p *PortForwardAction) getRequestMap(key string) (chan RequestMapStruct, bool) {
-	p.requestMapLock.Lock()
-	defer p.requestMapLock.Unlock()
-	act, ok := p.requestMap[key]
-	return act, ok
 }
 
 func bubbleUpError(writer http.ResponseWriter, content string) {
