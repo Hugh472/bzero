@@ -68,8 +68,7 @@ func New(logger *logger.Logger,
 		targetUser:          targetUser,
 		closed:              false,
 		streamOutputChan:    ch,
-		// FIXME: do we need to initialize our request?
-		doneChan: make(chan bool),
+		doneChan:            make(chan bool),
 	}, nil
 }
 
@@ -134,7 +133,6 @@ func (a *PortForwardAction) Receive(action string, actionPayload []byte) (string
 		// Alert on the done channel
 		a.request.doneChan <- true
 
-		// Else update our requestMap
 		// FIXME: should I be doing this?
 		a.request = nil
 		return string(portforward.StopPortForwardRequest), []byte{}, nil
